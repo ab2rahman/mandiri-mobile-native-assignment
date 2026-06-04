@@ -1,0 +1,14 @@
+.DS_Store
+
+# Android
+AndroidMovieNews/.gradle/
+AndroidMovieNews/build/
+AndroidMovieNews/app/build/
+AndroidMovieNews/local.properties
+
+# iOS
+iOSMovieNews/.build/
+iOSMovieNews/DerivedData/
+*.xcuserdata/
+*.xcuserstate
+
