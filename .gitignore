@@ -8,7 +8,7 @@ AndroidMovieNews/local.properties
 
 # iOS
 iOSMovieNews/.build/
+iOSMovieNews/build/
 iOSMovieNews/DerivedData/
 *.xcuserdata/
 *.xcuserstate
-

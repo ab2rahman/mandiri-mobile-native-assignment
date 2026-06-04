@@ -30,8 +30,13 @@ struct Secrets {
     let newsApiKey: String
 
     static func load() -> Secrets {
+        #if SWIFT_PACKAGE
+        let bundle = Bundle.module
+        #else
+        let bundle = Bundle.main
+        #endif
         guard
-            let url = Bundle.module.url(forResource: "Secrets", withExtension: "plist"),
+            let url = bundle.url(forResource: "Secrets", withExtension: "plist"),
             let data = try? Data(contentsOf: url),
             let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String]
         else {
