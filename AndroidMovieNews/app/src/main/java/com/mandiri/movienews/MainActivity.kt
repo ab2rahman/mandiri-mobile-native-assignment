@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,16 +23,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -323,18 +324,28 @@ class NewsViewModel(private val repo: NewsRepository) : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppRoot(container: AppContainer) {
     var tab by remember { mutableStateOf(0) }
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Movie News") }) }
-    ) { padding ->
-        Column(Modifier.padding(padding)) {
-            TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Movies") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("News") })
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = tab == 0,
+                    onClick = { tab = 0 },
+                    icon = { Text("🎬") },
+                    label = { Text("Movies") }
+                )
+                NavigationBarItem(
+                    selected = tab == 1,
+                    onClick = { tab = 1 },
+                    icon = { Text("📰") },
+                    label = { Text("News") }
+                )
             }
+        }
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize().background(ListBackground)) {
             if (tab == 0) MoviesFlow(container.movieRepository) else NewsFlow(container.newsRepository)
         }
     }
@@ -353,54 +364,67 @@ private fun MoviesFlow(repo: MovieRepository) {
 
 @Composable
 private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(0.42f).padding(12.dp)) {
-            Text("Genres", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            StateBlock(vm.genres, empty = "No genres found.", retry = vm::loadGenres) { genres ->
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(genres) { genre ->
-                        Card(Modifier.fillMaxWidth().clickable { vm.selectGenre(genre) }) {
-                            Text(genre.name, Modifier.padding(12.dp), fontWeight = if (vm.selectedGenre == genre) FontWeight.Bold else FontWeight.Normal)
-                        }
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= listState.layoutInfo.totalItemsCount - 5 && vm.movies.isNotEmpty()
+        }
+    }
+    LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) vm.loadMoreMovies() }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        item { LargeTitle("Movies") }
+        item { SectionHeader("Genres") }
+        when (val state = vm.genres) {
+            LoadState.Idle -> item { EmptyListRow("No genres found.") }
+            LoadState.Loading -> item { LoadingListRow() }
+            is LoadState.Failure -> item { ErrorListRow(state.message, vm::loadGenres) }
+            is LoadState.Success -> {
+                if (state.data.isEmpty()) {
+                    item { EmptyListRow("No genres found.") }
+                } else {
+                    items(state.data) { genre ->
+                        ListRow(
+                            title = genre.name,
+                            selected = vm.selectedGenre == genre,
+                            onClick = { vm.selectGenre(genre) }
+                        )
                     }
                 }
             }
         }
-        Column(Modifier.weight(0.58f).padding(12.dp)) {
-            Text(vm.selectedGenre?.name ?: "Movies", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            MovieLazyList(vm.movies, vm.movieLoading, vm.movieError, vm::loadMoreMovies, onMovie)
+
+        item { SectionHeader(vm.selectedGenre?.name ?: "Movies") }
+        if (vm.movies.isEmpty() && !vm.movieLoading && vm.movieError == null) {
+            item { EmptyListRow("Select a genre to discover movies.") }
         }
+        items(vm.movies) { movie ->
+            MovieListRow(movie = movie, onClick = { onMovie(movie) })
+        }
+        if (vm.movieLoading) item { LoadingListRow() }
+        vm.movieError?.let { item { ErrorListRow(it, vm::loadMoreMovies) } }
     }
 }
 
 @Composable
-private fun MovieLazyList(movies: List<Movie>, loading: Boolean, error: String?, loadMore: () -> Unit, onMovie: (Movie) -> Unit) {
-    val state = rememberLazyListState()
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val last = state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= movies.lastIndex - 4 && movies.isNotEmpty()
-        }
-    }
-    LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) loadMore() }
-    LazyColumn(state = state, contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (movies.isEmpty() && !loading && error == null) item { EmptyText("Select a genre to discover movies.") }
-        items(movies) { movie ->
-            Card(Modifier.fillMaxWidth().clickable { onMovie(movie) }) {
-                Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AsyncImage("https://image.tmdb.org/t/p/w185${movie.posterPath}", null, Modifier.size(78.dp, 116.dp))
-                    Column {
-                        Text(movie.title, fontWeight = FontWeight.Bold)
-                        Text("${movie.releaseDate} - Rating ${"%.1f".format(movie.voteAverage)}")
-                        Text(movie.overview, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    }
-                }
+private fun MovieListRow(movie: Movie, onClick: () -> Unit) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AsyncImage("https://image.tmdb.org/t/p/w185${movie.posterPath}", null, Modifier.size(68.dp, 102.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(movie.title, fontWeight = FontWeight.SemiBold)
+                Text("${movie.releaseDate.ifBlank { "-" }} - Rating ${"%.1f".format(movie.voteAverage)}", style = MaterialTheme.typography.bodySmall, color = SecondaryText)
+                Text(movie.overview, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             }
+            Text("›", style = MaterialTheme.typography.titleLarge, color = SecondaryText, modifier = Modifier.align(Alignment.CenterVertically))
         }
-        if (loading) item { LoadingRow() }
-        error?.let { item { ErrorBlock(it, loadMore) } }
     }
+    HorizontalDivider(color = DividerColor)
 }
 
 @Composable
@@ -408,35 +432,54 @@ private fun MovieDetailScreen(repo: MovieRepository, movieId: Int, onBack: () ->
     val vm: MovieDetailViewModel = viewModel(key = "movie-$movieId", factory = simpleFactory { MovieDetailViewModel(repo, movieId) })
     val context = LocalContext.current
     LaunchedEffect(movieId) { vm.load() }
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Button(onClick = onBack) { Text("Back") }
-        StateBlock(vm.detail, empty = "Movie not found.", retry = vm::load) { movie ->
-            Text(movie.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${movie.releaseDate} - Rating ${"%.1f".format(movie.voteAverage)}")
-            Text(movie.overview, Modifier.padding(vertical = 8.dp))
-            vm.trailer?.let { video ->
-                Button(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${video.key}")))
-                }) { Text("Open YouTube Trailer") }
-            }
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= listState.layoutInfo.totalItemsCount - 4 && vm.reviews.isNotEmpty()
         }
-        Text("Reviews", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
-        val state = rememberLazyListState()
-        val shouldLoadMore by remember { derivedStateOf { (state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= vm.reviews.lastIndex - 2 && vm.reviews.isNotEmpty() } }
-        LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) vm.loadMoreReviews() }
-        LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (vm.reviews.isEmpty() && !vm.reviewLoading && vm.reviewError == null) item { EmptyText("No reviews yet.") }
-            items(vm.reviews) { review ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(review.author, fontWeight = FontWeight.Bold)
-                        Text(review.content, maxLines = 6, overflow = TextOverflow.Ellipsis)
+    }
+    LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) vm.loadMoreReviews() }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        item { BackRow("Movie Detail", onBack) }
+        when (val state = vm.detail) {
+            LoadState.Idle -> item { EmptyListRow("Movie not found.") }
+            LoadState.Loading -> item { LoadingListRow() }
+            is LoadState.Failure -> item { ErrorListRow(state.message, vm::load) }
+            is LoadState.Success -> item {
+                Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(state.data.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("${state.data.releaseDate.ifBlank { "-" }} - Rating ${"%.1f".format(state.data.voteAverage)}", color = SecondaryText)
+                        Text(state.data.overview)
+                        vm.trailer?.let { video ->
+                            Button(onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${video.key}")))
+                            }) { Text("Open YouTube Trailer") }
+                        }
                     }
                 }
             }
-            if (vm.reviewLoading) item { LoadingRow() }
-            vm.reviewError?.let { item { ErrorBlock(it, vm::loadMoreReviews) } }
         }
+
+        item { SectionHeader("Reviews") }
+        if (vm.reviews.isEmpty() && !vm.reviewLoading && vm.reviewError == null) item { EmptyListRow("No reviews yet.") }
+        items(vm.reviews) { review ->
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(review.author, fontWeight = FontWeight.SemiBold)
+                    Text(review.content, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            HorizontalDivider(color = DividerColor)
+        }
+        if (vm.reviewLoading) item { LoadingListRow() }
+        vm.reviewError?.let { item { ErrorListRow(it, vm::loadMoreReviews) } }
     }
 }
 
@@ -449,68 +492,111 @@ private fun NewsFlow(repo: NewsRepository) {
 
 @Composable
 private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(0.32f).padding(12.dp)) {
-            Text("Categories", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            vm.categories.forEach { category ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { vm.selectCategory(category) }) {
-                    Text(category.replaceFirstChar { it.uppercase() }, Modifier.padding(12.dp), fontWeight = if (vm.selectedCategory == category) FontWeight.Bold else FontWeight.Normal)
-                }
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= listState.layoutInfo.totalItemsCount - 5 && vm.articles.isNotEmpty()
+        }
+    }
+    LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) vm.loadMoreArticles() }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        item { LargeTitle("News") }
+        item { SectionHeader("Categories") }
+        items(vm.categories) { category ->
+            ListRow(
+                title = category.replaceFirstChar { it.uppercase() },
+                selected = vm.selectedCategory == category,
+                onClick = { vm.selectCategory(category) }
+            )
+        }
+
+        item { SectionHeader("Sources") }
+        item {
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = vm.sourceQuery,
+                    onValueChange = {
+                        vm.sourceQuery = it
+                        vm.loadSources()
+                    },
+                    label = { Text("Search sources") },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
             }
         }
-        Column(Modifier.weight(0.34f).padding(12.dp)) {
-            Text("Sources", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            OutlinedTextField(vm.sourceQuery, {
-                vm.sourceQuery = it
-                vm.loadSources()
-            }, label = { Text("Search sources") }, modifier = Modifier.fillMaxWidth())
-            StateBlock(vm.sources, empty = "No sources found.", retry = vm::loadSources) { sources ->
-                LazyColumn {
-                    items(sources) { source ->
-                        Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { vm.selectSource(source) }) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(source.name, fontWeight = FontWeight.Bold)
-                                Text(source.description, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
+        when (val state = vm.sources) {
+            LoadState.Idle -> item { EmptyListRow("Choose a category to view sources.") }
+            LoadState.Loading -> item { LoadingListRow() }
+            is LoadState.Failure -> item { ErrorListRow(state.message, vm::loadSources) }
+            is LoadState.Success -> {
+                if (state.data.isEmpty()) {
+                    item { EmptyListRow("No sources found.") }
+                } else {
+                    items(state.data) { source ->
+                        SourceListRow(source, selected = vm.selectedSource == source, onClick = { vm.selectSource(source) })
                     }
                 }
             }
         }
-        Column(Modifier.weight(0.34f).padding(12.dp)) {
-            Text(vm.selectedSource?.name ?: "Articles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            OutlinedTextField(vm.articleQuery, vm::searchArticles, label = { Text("Search articles") }, modifier = Modifier.fillMaxWidth())
-            ArticleList(vm, onArticle)
+
+        item { SectionHeader(vm.selectedSource?.name ?: "Articles") }
+        item {
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = vm.articleQuery,
+                    onValueChange = vm::searchArticles,
+                    label = { Text("Search articles") },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
         }
+        if (vm.articles.isEmpty() && !vm.articleLoading && vm.articleError == null) {
+            item { EmptyListRow("Choose a source to view articles.") }
+        }
+        items(vm.articles) { article ->
+            ArticleListRow(article = article, onClick = { onArticle(article) })
+        }
+        if (vm.articleLoading) item { LoadingListRow() }
+        vm.articleError?.let { item { ErrorListRow(it, vm::loadMoreArticles) } }
     }
 }
 
 @Composable
-private fun ArticleList(vm: NewsViewModel, onArticle: (Article) -> Unit) {
-    val state = rememberLazyListState()
-    val shouldLoadMore by remember { derivedStateOf { (state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= vm.articles.lastIndex - 4 && vm.articles.isNotEmpty() } }
-    LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) vm.loadMoreArticles() }
-    LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (vm.articles.isEmpty() && !vm.articleLoading && vm.articleError == null) item { EmptyText("Choose a source to view articles.") }
-        items(vm.articles) { article ->
-            Card(Modifier.fillMaxWidth().clickable { onArticle(article) }) {
-                Column(Modifier.padding(12.dp)) {
-                    AsyncImage(article.imageUrl, null, Modifier.fillMaxWidth().height(120.dp))
-                    Text(article.title, fontWeight = FontWeight.Bold)
-                    Text(article.description.orEmpty(), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                }
+private fun SourceListRow(source: NewsSource, selected: Boolean, onClick: () -> Unit) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(source.name, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold)
+                Text(source.description, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = SecondaryText)
             }
+            Text("›", style = MaterialTheme.typography.titleLarge, color = SecondaryText, modifier = Modifier.align(Alignment.CenterVertically))
         }
-        if (vm.articleLoading) item { LoadingRow() }
-        vm.articleError?.let { item { ErrorBlock(it, vm::loadMoreArticles) } }
     }
+    HorizontalDivider(color = DividerColor)
+}
+
+@Composable
+private fun ArticleListRow(article: Article, onClick: () -> Unit) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AsyncImage(article.imageUrl, null, Modifier.fillMaxWidth().height(120.dp))
+            Text(article.title, fontWeight = FontWeight.SemiBold)
+            Text(article.description.orEmpty(), maxLines = 3, overflow = TextOverflow.Ellipsis, color = SecondaryText)
+        }
+    }
+    HorizontalDivider(color = DividerColor)
 }
 
 @Composable
 private fun ArticleWebScreen(url: String, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Button(onClick = onBack) { Text("Back") }
-        Text("Article detail", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxSize().background(ListBackground).padding(16.dp)) {
+        BackRow("Article Detail", onBack)
         AndroidView(
             modifier = Modifier.fillMaxSize().padding(top = 8.dp),
             factory = { context -> WebView(context).apply { settings.javaScriptEnabled = true } },
@@ -519,26 +605,58 @@ private fun ArticleWebScreen(url: String, onBack: () -> Unit) {
     }
 }
 
-@Composable
-private fun <T> StateBlock(state: LoadState<T>, empty: String, retry: () -> Unit, content: @Composable (T) -> Unit) {
-    when (state) {
-        LoadState.Idle -> EmptyText(empty)
-        LoadState.Loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        is LoadState.Failure -> ErrorBlock(state.message, retry)
-        is LoadState.Success -> {
-            val value = state.data
-            if (value is Collection<*> && value.isEmpty()) EmptyText(empty) else content(value)
+private val ListBackground = Color(0xFFF2F2F7)
+private val SecondaryText = Color(0xFF6D6D72)
+private val DividerColor = Color(0xFFE5E5EA)
+
+@Composable private fun LargeTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+}
+
+@Composable private fun SectionHeader(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = SecondaryText, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp, start = 2.dp))
+}
+
+@Composable private fun ListRow(title: String, selected: Boolean = false, onClick: () -> Unit) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, modifier = Modifier.weight(1f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            Text("›", style = MaterialTheme.typography.titleLarge, color = SecondaryText)
         }
+    }
+    HorizontalDivider(color = DividerColor)
+}
+
+@Composable private fun BackRow(title: String, onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("‹ Back", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(onClick = onBack).padding(vertical = 8.dp))
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.size(56.dp))
     }
 }
 
-@Composable private fun EmptyText(text: String) = Text(text, Modifier.padding(16.dp))
-@Composable private fun LoadingRow() = Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-@Composable private fun ErrorBlock(message: String, retry: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(message)
-        Button(onClick = retry) { Text("Retry") }
+@Composable private fun EmptyListRow(text: String) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+        Text(text, Modifier.padding(16.dp), color = SecondaryText)
     }
+    HorizontalDivider(color = DividerColor)
+}
+
+@Composable private fun LoadingListRow() {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    }
+    HorizontalDivider(color = DividerColor)
+}
+
+@Composable private fun ErrorListRow(message: String, retry: () -> Unit) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message, color = SecondaryText)
+            Button(onClick = retry) { Text("Retry") }
+        }
+    }
+    HorizontalDivider(color = DividerColor)
 }
 
 private inline fun <reified T : ViewModel> simpleFactory(crossinline create: () -> T): ViewModelProvider.Factory =

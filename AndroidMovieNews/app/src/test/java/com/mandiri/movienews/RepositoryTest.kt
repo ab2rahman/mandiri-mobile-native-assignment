@@ -2,7 +2,7 @@ package com.mandiri.movienews
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
+import org.junit.Assert.fail
 import org.junit.Test
 
 class RepositoryTest {
@@ -38,8 +38,11 @@ class RepositoryTest {
     fun newsRepositoryThrowsWhenApiReturnsError() = runTest {
         val repository = NewsRepository(FakeNewsApi(status = "error"))
 
-        assertFailsWith<IllegalStateException> {
+        try {
             repository.articles("bad-source", "", 1)
+            fail("Expected IllegalStateException")
+        } catch (expected: IllegalStateException) {
+            assertEquals("Invalid source", expected.message)
         }
     }
 }
