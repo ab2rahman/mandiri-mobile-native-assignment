@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -417,7 +418,7 @@ private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
 private fun MovieListRow(movie: Movie, onClick: () -> Unit) {
     Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AsyncImage("https://image.tmdb.org/t/p/w185${movie.posterPath}", null, Modifier.size(68.dp, 102.dp))
+            PosterImage(movie.posterPath)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(movie.title, fontWeight = FontWeight.SemiBold)
                 Text("${movie.releaseDate.ifBlank { "-" }} - Rating ${"%.1f".format(movie.voteAverage)}", style = MaterialTheme.typography.bodySmall, color = SecondaryText)
@@ -573,7 +574,7 @@ private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
 private fun ArticleListRow(article: Article, onClick: () -> Unit) {
     Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            AsyncImage(article.imageUrl, null, Modifier.fillMaxWidth().height(120.dp))
+            ArticleImage(article.imageUrl)
             Text(article.title, fontWeight = FontWeight.SemiBold)
             Text(article.description.orEmpty(), maxLines = 3, overflow = TextOverflow.Ellipsis, color = SecondaryText)
         }
@@ -596,6 +597,49 @@ private fun ArticleWebScreen(url: String, onBack: () -> Unit) {
 private val ListBackground = Color(0xFFF2F2F7)
 private val SecondaryText = Color(0xFF6D6D72)
 private val DividerColor = Color(0xFFE5E5EA)
+
+private fun tmdbPosterUrl(path: String?): String? = path?.let { "https://image.tmdb.org/t/p/w342$it" }
+
+@Composable private fun PosterImage(path: String?) {
+    Box(
+        modifier = Modifier
+            .size(68.dp, 102.dp)
+            .background(ListBackground),
+        contentAlignment = Alignment.Center
+    ) {
+        if (path.isNullOrBlank()) {
+            Text("No image", style = MaterialTheme.typography.labelSmall, color = SecondaryText)
+        } else {
+            AsyncImage(
+                model = tmdbPosterUrl(path),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+@Composable private fun ArticleImage(url: String?) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .background(ListBackground),
+        contentAlignment = Alignment.Center
+    ) {
+        if (url.isNullOrBlank()) {
+            Text("No image", style = MaterialTheme.typography.labelMedium, color = SecondaryText)
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
 
 @Composable private fun LargeTitle(text: String) {
     Text(text, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
