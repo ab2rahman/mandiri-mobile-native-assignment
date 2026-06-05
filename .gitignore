@@ -2,6 +2,7 @@
 
 # Android
 AndroidMovieNews/.gradle/
+AndroidMovieNews/.kotlin/
 AndroidMovieNews/build/
 AndroidMovieNews/app/build/
 AndroidMovieNews/local.properties
