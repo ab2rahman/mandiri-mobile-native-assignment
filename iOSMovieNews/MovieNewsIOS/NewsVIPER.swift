@@ -84,35 +84,27 @@ struct NewsRouter {
 
 struct NewsCategoriesView: View {
     @StateObject var presenter: NewsPresenter
+    @State private var showsCategorySheet = false
+    @State private var showsSourceSheet = false
 
     var body: some View {
         List {
-            Section("Categories") {
-                ForEach(presenter.categories, id: \.self) { category in
-                    Button(category.capitalized) {
-                        Task { await presenter.selectCategory(category) }
-                    }
+            Section {
+                PickerRow(label: "Category", value: presenter.selectedCategory?.capitalized ?? "Select a category") {
+                    showsCategorySheet = true
                 }
-            }
-
-            Section("Sources") {
-                TextField("Search sources", text: $presenter.sourceQuery)
-                    .onSubmit { Task { await presenter.loadSources() } }
 
                 if presenter.sources.isLoading {
                     ProgressView()
                 } else if let error = presenter.sources.error {
                     RetryView(message: error) { Task { await presenter.loadSources() } }
                 } else {
-                    ForEach(presenter.sources.value ?? [], id: \.stableID) { source in
-                        Button {
-                            Task { await presenter.selectSource(source) }
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(source.name).font(.headline)
-                                Text(source.description).font(.subheadline).lineLimit(3)
-                            }
-                        }
+                    PickerRow(
+                        label: "Source",
+                        value: presenter.selectedSource?.name ?? (presenter.selectedCategory == nil ? "Choose a category first" : "Select a source"),
+                        isEnabled: presenter.selectedCategory != nil
+                    ) {
+                        showsSourceSheet = true
                     }
                 }
             }
@@ -141,6 +133,66 @@ struct NewsCategoriesView: View {
             }
         }
         .navigationTitle("News")
+        .sheet(isPresented: $showsCategorySheet) {
+            NavigationStack {
+                List {
+                    ForEach(presenter.categories, id: \.self) { category in
+                        Button {
+                            showsCategorySheet = false
+                            Task { await presenter.selectCategory(category) }
+                        } label: {
+                            HStack {
+                                Text(category.capitalized)
+                                Spacer()
+                                if presenter.selectedCategory == category {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Choose Category")
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showsSourceSheet) {
+            NavigationStack {
+                List {
+                    Section {
+                        TextField("Search sources", text: $presenter.sourceQuery)
+                            .onSubmit { Task { await presenter.loadSources() } }
+                    }
+
+                    Section {
+                        if presenter.sources.isLoading {
+                            ProgressView()
+                        } else if let error = presenter.sources.error {
+                            RetryView(message: error) { Task { await presenter.loadSources() } }
+                        } else {
+                            ForEach(presenter.sources.value ?? [], id: \.stableID) { source in
+                                Button {
+                                    showsSourceSheet = false
+                                    Task { await presenter.selectSource(source) }
+                                } label: {
+                                    HStack(alignment: .top) {
+                                        VStack(alignment: .leading) {
+                                            Text(source.name).font(.headline)
+                                            Text(source.description).font(.subheadline).lineLimit(3)
+                                        }
+                                        Spacer()
+                                        if presenter.selectedSource == source {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Choose Source")
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 }
 
@@ -213,5 +265,26 @@ struct RetryView: View {
             Text(message).foregroundStyle(.red)
             Button("Retry", action: retry)
         }
+    }
+}
+
+struct PickerRow: View {
+    let label: String
+    let value: String
+    var isEnabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(label).font(.caption).foregroundStyle(.secondary)
+                    Text(value).font(.headline).foregroundStyle(isEnabled ? .primary : .secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+        }
+        .disabled(!isEnabled)
     }
 }

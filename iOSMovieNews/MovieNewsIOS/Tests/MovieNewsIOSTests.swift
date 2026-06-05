@@ -20,6 +20,16 @@ final class MovieNewsIOSTests: XCTestCase {
         XCTAssertEqual(error, "Failure")
     }
 
+    func testMoviePresenterSearchesMovies() async {
+        let presenter = await GenresPresenter(interactor: MoviesInteractor(repository: FakeMovieRepository()))
+
+        await MainActor.run { presenter.movieQuery = "matrix" }
+        await presenter.searchMovies()
+
+        let movies = await presenter.movies
+        XCTAssertEqual(movies.map(\.title), ["Search Result"])
+    }
+
     func testNewsPresenterFiltersSources() async {
         let presenter = await NewsPresenter(interactor: NewsInteractor(repository: FakeNewsRepository()))
 
@@ -58,6 +68,10 @@ private struct FakeMovieRepository: MovieRepository {
 
     func discover(genreID: Int, page: Int) async throws -> MoviePage {
         MoviePage(page: page, results: [Movie(id: 1, title: "Movie", overview: "Overview", posterPath: nil, releaseDate: "2026-01-01", voteAverage: 8.1)], totalPages: 1)
+    }
+
+    func search(query: String, page: Int) async throws -> MoviePage {
+        MoviePage(page: page, results: [Movie(id: 2, title: "Search Result", overview: query, posterPath: nil, releaseDate: "2026-01-02", voteAverage: 8.2)], totalPages: 1)
     }
 
     func detail(movieID: Int) async throws -> Movie {
@@ -103,4 +117,3 @@ private struct FakeNewsRepository: NewsRepository {
         ]
     }
 }
-

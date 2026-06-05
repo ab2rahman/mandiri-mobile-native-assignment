@@ -47,6 +47,7 @@ extension URLSession: HTTPSession {
 @MainActor protocol MovieRepository {
     func genres() async throws -> [Genre]
     func discover(genreID: Int, page: Int) async throws -> MoviePage
+    func search(query: String, page: Int) async throws -> MoviePage
     func detail(movieID: Int) async throws -> Movie
     func reviews(movieID: Int, page: Int) async throws -> ReviewPage
     func trailer(movieID: Int) async throws -> Video?
@@ -67,6 +68,9 @@ extension URLSession: HTTPSession {
     func discover(genreID: Int, page: Int) async throws -> MoviePage {
         try await client.get("discover/movie", query: [.init(name: "with_genres", value: "\(genreID)"), .init(name: "page", value: "\(page)")])
     }
+    func search(query: String, page: Int) async throws -> MoviePage {
+        try await client.get("search/movie", query: [.init(name: "query", value: query), .init(name: "page", value: "\(page)")])
+    }
     func detail(movieID: Int) async throws -> Movie { try await client.get("movie/\(movieID)") }
     func reviews(movieID: Int, page: Int) async throws -> ReviewPage {
         try await client.get("movie/\(movieID)/reviews", query: [.init(name: "page", value: "\(page)")])
@@ -78,6 +82,7 @@ struct RemoteMovieRepository: MovieRepository {
     let api: TMDBClient
     func genres() async throws -> [Genre] { try await api.genres().genres }
     func discover(genreID: Int, page: Int) async throws -> MoviePage { try await api.discover(genreID: genreID, page: page) }
+    func search(query: String, page: Int) async throws -> MoviePage { try await api.search(query: query, page: page) }
     func detail(movieID: Int) async throws -> Movie { try await api.detail(movieID: movieID) }
     func reviews(movieID: Int, page: Int) async throws -> ReviewPage { try await api.reviews(movieID: movieID, page: page) }
     func trailer(movieID: Int) async throws -> Video? {

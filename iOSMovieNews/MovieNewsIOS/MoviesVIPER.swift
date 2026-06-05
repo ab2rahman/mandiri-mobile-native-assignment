@@ -4,6 +4,7 @@ import SwiftUI
 final class GenresPresenter: ObservableObject {
     @Published var state = Loadable<[Genre]>()
     @Published var selectedGenre: Genre?
+    @Published var movieQuery = ""
     @Published var movies: [Movie] = []
     @Published var movieError: String?
     @Published var isLoadingMovies = false
@@ -35,12 +36,24 @@ final class GenresPresenter: ObservableObject {
         await loadMoreMovies()
     }
 
+    func searchMovies() async {
+        movies = []
+        page = 1
+        totalPages = 1
+        await loadMoreMovies()
+    }
+
     func loadMoreMovies() async {
-        guard let genre = selectedGenre, !isLoadingMovies, page <= totalPages else { return }
+        guard !isLoadingMovies, page <= totalPages else { return }
+        guard !movieQuery.isEmpty || selectedGenre != nil else { return }
         isLoadingMovies = true
         movieError = nil
         do {
-            let result = try await interactor.discover(genreID: genre.id, page: page)
+            let result = if movieQuery.isEmpty {
+                try await interactor.discover(genreID: selectedGenre!.id, page: page)
+            } else {
+                try await interactor.search(query: movieQuery.trimmingCharacters(in: .whitespacesAndNewlines), page: page)
+            }
             movies.append(contentsOf: result.results)
             totalPages = result.totalPages
             page += 1
@@ -101,6 +114,7 @@ final class MovieDetailPresenter: ObservableObject {
     let repository: MovieRepository
     func loadGenres() async throws -> [Genre] { try await repository.genres() }
     func discover(genreID: Int, page: Int) async throws -> MoviePage { try await repository.discover(genreID: genreID, page: page) }
+    func search(query: String, page: Int) async throws -> MoviePage { try await repository.search(query: query, page: page) }
     func detail(movieID: Int) async throws -> Movie { try await repository.detail(movieID: movieID) }
     func reviews(movieID: Int, page: Int) async throws -> ReviewPage { try await repository.reviews(movieID: movieID, page: page) }
     func trailer(movieID: Int) async throws -> Video? { try await repository.trailer(movieID: movieID) }
@@ -125,24 +139,27 @@ struct MoviesRouter {
 struct GenresView: View {
     @StateObject var presenter: GenresPresenter
     let router: MoviesRouter
+    @State private var showsGenreSheet = false
 
     var body: some View {
         List {
-            Section("Genres") {
-                if presenter.state.isLoading {
-                    ProgressView()
-                } else if let error = presenter.state.error {
+            Section {
+                if let error = presenter.state.error {
                     RetryView(message: error) { Task { await presenter.loadGenres() } }
+                } else if presenter.state.isLoading {
+                    ProgressView()
                 } else {
-                    ForEach(presenter.state.value ?? []) { genre in
-                        Button(genre.name) { Task { await presenter.select(genre) } }
+                    PickerRow(label: "Genre", value: presenter.selectedGenre?.name ?? "Select a genre") {
+                        showsGenreSheet = true
                     }
                 }
+                TextField("Search movies", text: $presenter.movieQuery)
+                    .onSubmit { Task { await presenter.searchMovies() } }
             }
 
-            Section(presenter.selectedGenre?.name ?? "Movies") {
-                if presenter.movies.isEmpty, presenter.selectedGenre == nil {
-                    Text("Select a genre to discover movies.")
+            Section(presenter.movieQuery.isEmpty ? presenter.selectedGenre?.name ?? "Movies" : "Search Results") {
+                if presenter.movies.isEmpty, !presenter.isLoadingMovies, presenter.movieError == nil {
+                    Text("Search movies or select a genre.")
                 }
                 ForEach(presenter.movies) { movie in
                     NavigationLink(value: movie.id) {
@@ -161,6 +178,28 @@ struct GenresView: View {
         .navigationTitle("Movies")
         .navigationDestination(for: Int.self) { movieID in
             router.makeMovieDetailView(movieID: movieID)
+        }
+        .sheet(isPresented: $showsGenreSheet) {
+            NavigationStack {
+                List {
+                    ForEach(presenter.state.value ?? []) { genre in
+                        Button {
+                            showsGenreSheet = false
+                            Task { await presenter.select(genre) }
+                        } label: {
+                            HStack {
+                                Text(genre.name)
+                                Spacer()
+                                if presenter.selectedGenre == genre {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Choose Genre")
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { await presenter.loadGenres() }
     }
