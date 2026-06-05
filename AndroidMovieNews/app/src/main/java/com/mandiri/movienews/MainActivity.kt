@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,19 +25,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -368,8 +367,10 @@ private fun MoviesFlow(repo: MovieRepository) {
     } ?: MovieListScreen(vm, onMovie = { detailMovieId = it.id })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
+    var showGenreSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -382,16 +383,15 @@ private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             LargeTitle("Movies")
-            SectionHeader("Genres")
             when (val state = vm.genres) {
-                LoadState.Idle -> DropdownPicker("Genre", "No genres found", emptyList(), enabled = false)
-                LoadState.Loading -> DropdownPicker("Genre", "Loading genres", emptyList(), enabled = false)
+                LoadState.Idle -> SelectorButton("Genre", "No genres found", enabled = false)
+                LoadState.Loading -> SelectorButton("Genre", "Loading genres", enabled = false)
                 is LoadState.Failure -> ErrorListRow(state.message, vm::loadGenres)
-                is LoadState.Success -> DropdownPicker(
+                is LoadState.Success -> SelectorButton(
                     label = "Genre",
                     value = vm.selectedGenre?.name ?: "Select a genre",
-                    options = state.data.map { genre -> genre.name to { vm.selectGenre(genre) } },
-                    enabled = state.data.isNotEmpty()
+                    enabled = state.data.isNotEmpty(),
+                    onClick = { showGenreSheet = true }
                 )
             }
         }
@@ -410,6 +410,24 @@ private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
             }
             if (vm.movieLoading) item { LoadingListRow() }
             vm.movieError?.let { item { ErrorListRow(it, vm::loadMoreMovies) } }
+        }
+    }
+
+    if (showGenreSheet) {
+        ModalBottomSheet(onDismissRequest = { showGenreSheet = false }) {
+            BottomSheetOptions(
+                title = "Choose Genre",
+                options = (vm.genres as? LoadState.Success<List<Genre>>)?.data.orEmpty().map { genre ->
+                    SheetOption(
+                        title = genre.name,
+                        selected = vm.selectedGenre == genre,
+                        action = {
+                            showGenreSheet = false
+                            vm.selectGenre(genre)
+                        }
+                    )
+                }
+            )
         }
     }
 }
@@ -493,8 +511,10 @@ private fun NewsFlow(repo: NewsRepository) {
     webUrl?.let { ArticleWebScreen(it) { webUrl = null } } ?: NewsScreen(vm, onArticle = { webUrl = it.url })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
+    var activeSheet by remember { mutableStateOf<NewsSheet?>(null) }
     val listState = rememberLazyListState()
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -507,49 +527,30 @@ private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             LargeTitle("News")
-            SectionHeader("Categories")
-            DropdownPicker(
+            SelectorButton(
                 label = "Category",
                 value = vm.selectedCategory?.replaceFirstChar { it.uppercase() } ?: "Select a category",
-                options = vm.categories.map { category ->
-                    category.replaceFirstChar { it.uppercase() } to { vm.selectCategory(category) }
-                }
+                onClick = { activeSheet = NewsSheet.Category }
             )
 
-            SectionHeader("Sources")
-            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = vm.sourceQuery,
-                    onValueChange = {
-                        vm.sourceQuery = it
-                        vm.loadSources()
-                    },
-                    label = { Text("Search sources") },
-                    modifier = Modifier.fillMaxWidth().padding(12.dp)
-                )
-            }
-
             when (val state = vm.sources) {
-                LoadState.Idle -> DropdownPicker("Source", "Choose a category first", emptyList(), enabled = false)
-                LoadState.Loading -> DropdownPicker("Source", "Loading sources", emptyList(), enabled = false)
+                LoadState.Idle -> SelectorButton("Source", "Choose a category first", enabled = false)
+                LoadState.Loading -> SelectorButton("Source", "Loading sources", enabled = false)
                 is LoadState.Failure -> ErrorListRow(state.message, vm::loadSources)
-                is LoadState.Success -> DropdownPicker(
+                is LoadState.Success -> SelectorButton(
                     label = "Source",
                     value = vm.selectedSource?.name ?: "Select a source",
-                    options = state.data.map { source -> source.name to { vm.selectSource(source) } },
-                    enabled = state.data.isNotEmpty()
+                    enabled = state.data.isNotEmpty(),
+                    onClick = { activeSheet = NewsSheet.Source }
                 )
             }
 
-            SectionHeader("Articles")
-            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = vm.articleQuery,
-                    onValueChange = vm::searchArticles,
-                    label = { Text("Search articles") },
-                    modifier = Modifier.fillMaxWidth().padding(12.dp)
-                )
-            }
+            SelectorButton(
+                label = "Article Search",
+                value = vm.articleQuery.ifBlank { "Search articles" },
+                enabled = vm.selectedSource != null,
+                onClick = { activeSheet = NewsSheet.ArticleSearch }
+            )
         }
 
         LazyColumn(
@@ -567,6 +568,31 @@ private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
             if (vm.articleLoading) item { LoadingListRow() }
             vm.articleError?.let { item { ErrorListRow(it, vm::loadMoreArticles) } }
         }
+    }
+
+    when (activeSheet) {
+        NewsSheet.Category -> ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
+            BottomSheetOptions(
+                title = "Choose Category",
+                options = vm.categories.map { category ->
+                    SheetOption(
+                        title = category.replaceFirstChar { it.uppercase() },
+                        selected = vm.selectedCategory == category,
+                        action = {
+                            activeSheet = null
+                            vm.selectCategory(category)
+                        }
+                    )
+                }
+            )
+        }
+        NewsSheet.Source -> ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
+            SourceBottomSheet(vm = vm, onClose = { activeSheet = null })
+        }
+        NewsSheet.ArticleSearch -> ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
+            ArticleSearchBottomSheet(vm = vm, onClose = { activeSheet = null })
+        }
+        null -> Unit
     }
 }
 
@@ -597,6 +623,15 @@ private fun ArticleWebScreen(url: String, onBack: () -> Unit) {
 private val ListBackground = Color(0xFFF2F2F7)
 private val SecondaryText = Color(0xFF6D6D72)
 private val DividerColor = Color(0xFFE5E5EA)
+
+private enum class NewsSheet { Category, Source, ArticleSearch }
+
+private data class SheetOption(
+    val title: String,
+    val subtitle: String? = null,
+    val selected: Boolean = false,
+    val action: () -> Unit
+)
 
 private fun tmdbPosterUrl(path: String?): String? = path?.let { "https://image.tmdb.org/t/p/w342$it" }
 
@@ -649,42 +684,109 @@ private fun tmdbPosterUrl(path: String?): String? = path?.let { "https://image.t
     Text(text, style = MaterialTheme.typography.labelLarge, color = SecondaryText, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp, start = 2.dp))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun DropdownPicker(
+@Composable private fun SelectorButton(
     label: String,
     value: String,
-    options: List<Pair<String, () -> Unit>>,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    onClick: () -> Unit = {}
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { if (enabled) expanded = !expanded }
+    Surface(
+        color = Color.White,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clickable(enabled = enabled, onClick = onClick)
     ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            enabled = enabled,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled).fillMaxWidth()
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            options.forEach { (title, action) ->
-                DropdownMenuItem(
-                    text = { Text(title) },
-                    onClick = {
-                        expanded = false
-                        action()
-                    }
-                )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = SecondaryText)
+                Text(value, fontWeight = FontWeight.SemiBold, color = if (enabled) Color.Unspecified else SecondaryText)
+            }
+            Text("›", style = MaterialTheme.typography.titleLarge, color = SecondaryText)
+        }
+    }
+}
+
+@Composable private fun BottomSheetOptions(title: String? = null, options: List<SheetOption>) {
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        title?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+            if (options.isEmpty()) {
+                item { EmptyListRow("No options found.") }
+            }
+            items(options) { option ->
+                SheetOptionRow(option)
             }
         }
     }
+}
+
+@Composable private fun SourceBottomSheet(vm: NewsViewModel, onClose: () -> Unit) {
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Choose Source", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+        OutlinedTextField(
+            value = vm.sourceQuery,
+            onValueChange = {
+                vm.sourceQuery = it
+                vm.loadSources()
+            },
+            label = { Text("Search sources") },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+        )
+        when (val state = vm.sources) {
+            LoadState.Idle -> EmptyListRow("Choose a category first.")
+            LoadState.Loading -> LoadingListRow()
+            is LoadState.Failure -> ErrorListRow(state.message, vm::loadSources)
+            is LoadState.Success -> BottomSheetOptions(
+                options = state.data.map { source ->
+                    SheetOption(
+                        title = source.name,
+                        subtitle = source.description,
+                        selected = vm.selectedSource == source,
+                        action = {
+                            onClose()
+                            vm.selectSource(source)
+                        }
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable private fun ArticleSearchBottomSheet(vm: NewsViewModel, onClose: () -> Unit) {
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Search Articles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        OutlinedTextField(
+            value = vm.articleQuery,
+            onValueChange = vm::searchArticles,
+            label = { Text("Search articles") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.End)) { Text("Done") }
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable private fun SheetOptionRow(option: SheetOption) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxWidth().clickable(onClick = option.action)) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(option.title, fontWeight = if (option.selected) FontWeight.Bold else FontWeight.SemiBold)
+                option.subtitle?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = SecondaryText)
+                }
+            }
+            if (option.selected) Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
+    }
+    HorizontalDivider(color = DividerColor)
 }
 
 @Composable private fun BackRow(title: String, onBack: () -> Unit) {
