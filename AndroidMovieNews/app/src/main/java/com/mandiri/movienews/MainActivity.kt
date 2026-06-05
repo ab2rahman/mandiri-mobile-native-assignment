@@ -35,7 +35,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -150,6 +149,9 @@ interface TmdbApi {
     @GET("discover/movie")
     suspend fun discover(@Query("with_genres") genreId: Int, @Query("page") page: Int): MoviePage
 
+    @GET("search/movie")
+    suspend fun search(@Query("query") query: String, @Query("page") page: Int): MoviePage
+
     @GET("movie/{id}")
     suspend fun details(@retrofit2.http.Path("id") id: Int): Movie
 
@@ -163,6 +165,7 @@ interface TmdbApi {
 class MovieRepository(private val api: TmdbApi) {
     suspend fun genres() = api.genres().genres
     suspend fun discover(genreId: Int, page: Int) = api.discover(genreId, page)
+    suspend fun search(query: String, page: Int) = api.search(query, page)
     suspend fun details(id: Int) = api.details(id)
     suspend fun reviews(id: Int, page: Int) = api.reviews(id, page)
     suspend fun trailer(id: Int) = api.videos(id).results.firstOrNull {
@@ -208,6 +211,7 @@ class NewsRepository(private val api: NewsApi) {
 class MovieViewModel(private val repo: MovieRepository) : ViewModel() {
     var genres by mutableStateOf<LoadState<List<Genre>>>(LoadState.Idle)
     var selectedGenre by mutableStateOf<Genre?>(null)
+    var movieQuery by mutableStateOf("")
     var movies = mutableStateListOf<Movie>()
     var movieError by mutableStateOf<String?>(null)
     var movieLoading by mutableStateOf(false)
@@ -227,12 +231,26 @@ class MovieViewModel(private val repo: MovieRepository) : ViewModel() {
         loadMoreMovies()
     }
 
+    fun searchMovies(query: String) {
+        movieQuery = query
+        movies.clear()
+        moviePage = 1
+        movieTotalPages = 1
+        loadMoreMovies()
+    }
+
     fun loadMoreMovies() = viewModelScope.launch {
-        val genre = selectedGenre ?: return@launch
         if (movieLoading || moviePage > movieTotalPages) return@launch
+        if (movieQuery.isBlank() && selectedGenre == null) return@launch
         movieLoading = true
         movieError = null
-        runCatching { repo.discover(genre.id, moviePage) }
+        runCatching {
+            if (movieQuery.isBlank()) {
+                repo.discover(selectedGenre!!.id, moviePage)
+            } else {
+                repo.search(movieQuery.trim(), moviePage)
+            }
+        }
             .onSuccess {
                 movies.addAll(it.results)
                 movieTotalPages = it.totalPages
@@ -394,6 +412,14 @@ private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
                     onClick = { showGenreSheet = true }
                 )
             }
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = vm.movieQuery,
+                    onValueChange = vm::searchMovies,
+                    label = { Text("Search movies") },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
         }
 
         LazyColumn(
@@ -401,9 +427,9 @@ private fun MovieListScreen(vm: MovieViewModel, onMovie: (Movie) -> Unit) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            item { SectionHeader(vm.selectedGenre?.name ?: "Movies") }
+            item { SectionHeader(if (vm.movieQuery.isBlank()) vm.selectedGenre?.name ?: "Movies" else "Search Results") }
             if (vm.movies.isEmpty() && !vm.movieLoading && vm.movieError == null) {
-                item { EmptyListRow("Select a genre to discover movies.") }
+                item { EmptyListRow("Search movies or select a genre.") }
             }
             items(vm.movies) { movie ->
                 MovieListRow(movie = movie, onClick = { onMovie(movie) })
@@ -545,12 +571,15 @@ private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
                 )
             }
 
-            SelectorButton(
-                label = "Article Search",
-                value = vm.articleQuery.ifBlank { "Search articles" },
-                enabled = vm.selectedSource != null,
-                onClick = { activeSheet = NewsSheet.ArticleSearch }
-            )
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = vm.articleQuery,
+                    onValueChange = vm::searchArticles,
+                    enabled = vm.selectedSource != null,
+                    label = { Text("Search articles") },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
         }
 
         LazyColumn(
@@ -589,9 +618,6 @@ private fun NewsScreen(vm: NewsViewModel, onArticle: (Article) -> Unit) {
         NewsSheet.Source -> ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
             SourceBottomSheet(vm = vm, onClose = { activeSheet = null })
         }
-        NewsSheet.ArticleSearch -> ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
-            ArticleSearchBottomSheet(vm = vm, onClose = { activeSheet = null })
-        }
         null -> Unit
     }
 }
@@ -624,7 +650,7 @@ private val ListBackground = Color(0xFFF2F2F7)
 private val SecondaryText = Color(0xFF6D6D72)
 private val DividerColor = Color(0xFFE5E5EA)
 
-private enum class NewsSheet { Category, Source, ArticleSearch }
+private enum class NewsSheet { Category, Source }
 
 private data class SheetOption(
     val title: String,
@@ -757,20 +783,6 @@ private fun tmdbPosterUrl(path: String?): String? = path?.let { "https://image.t
                 }
             )
         }
-    }
-}
-
-@Composable private fun ArticleSearchBottomSheet(vm: NewsViewModel, onClose: () -> Unit) {
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Search Articles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        OutlinedTextField(
-            value = vm.articleQuery,
-            onValueChange = vm::searchArticles,
-            label = { Text("Search articles") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        TextButton(onClick = onClose, modifier = Modifier.align(Alignment.End)) { Text("Done") }
-        Spacer(Modifier.height(12.dp))
     }
 }
 

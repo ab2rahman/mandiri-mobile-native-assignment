@@ -25,6 +25,16 @@ class RepositoryTest {
     }
 
     @Test
+    fun movieRepositorySearchesMovies() = runTest {
+        val repository = MovieRepository(FakeTmdbApi())
+
+        val page = repository.search("matrix", 1)
+
+        assertEquals(1, page.results.size)
+        assertEquals("Search Result", page.results.first().title)
+    }
+
+    @Test
     fun newsRepositoryFiltersSources() = runTest {
         val repository = NewsRepository(FakeNewsApi())
 
@@ -54,6 +64,12 @@ private class FakeTmdbApi : TmdbApi {
         page = page,
         totalPages = 2,
         results = listOf(Movie(id = 1, title = "Sample Movie", overview = "Overview"))
+    )
+
+    override suspend fun search(query: String, page: Int) = MoviePage(
+        page = page,
+        totalPages = 1,
+        results = listOf(Movie(id = 2, title = "Search Result", overview = query))
     )
 
     override suspend fun details(id: Int) = Movie(id = id, title = "Sample Movie", overview = "Overview")
